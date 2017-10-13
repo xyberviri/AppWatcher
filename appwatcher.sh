@@ -6,12 +6,19 @@ varLatestList=${varEtcFolder}/latest.lst
 varReportFile=/tmp/${RANDOM}.appwatcher
 SERVER="`hostname`";
 
+
+
+function log {
+  echo "$@"
+  logger -p user.notice -t "appwatcher[$$]" "$@"
+}
+
 function sendReport {
 if [ ${#varPackagesAdded[@]} -gt 0 ] || [ ${#varPackagesRemoved[@]} -gt 0 ]; then
-	echo "Sending report to $varDestinationEmail"
+	log "New software found sending report to $varDestinationEmail"
 	mail -s "New software report for $SERVER" $varDestinationEmail < $varReportFile
 else
-	echo "No new software found"
+	log "No new software found"
 fi
 }
 
@@ -24,12 +31,16 @@ diff --unchanged-line-format= --old-line-format="%L" --new-line-format= $varCurr
 }
 
 function getPkgHistory {
-grep "$1" /var/log/dpkg.log|awk '{print $4" on " $1 $2}' | sed -e '$!d;s/not-installed/removed/;s/^/#/'
+grep "$1" /var/log/dpkg.log|awk '{print $5" "$4" on " $1 $2}' | sed -e '$!d;s/not-installed/removed/;s/^/#/'
+}
+
+function getPkgStatus {
+grep "$1" /var/log/dpkg.log |cut -d " " -f4 | sed -e '$!d'
 }
 
 function checkSetup {
 [ ! -d $varEtcFolder ] && mkdir -p $varEtcFolder
-[ ! -f $varCurrentList ] && $( getPackageList > $varCurrentList )
+[ ! -f $varCurrentList ] && $( touch $varCurrentList )
 $( getPackageList > $varLatestList )
 }
 
@@ -40,13 +51,13 @@ dpkg --get-selections
 function buildReport {
 echo "New software report for $SERVER"
 echo $(date +"%D:%T")
-echo "${#varPackagesAdded[@]} packages installed"
+log "${#varPackagesAdded[@]} new packages were installed"
 [ ${#varPackagesAdded[@]} -gt 0 ] && echo "Package List:"
 	for package in "${varPackagesAdded[@]}"; do
 	echo $package
 	getPkgHistory $package
 	done
-echo "${#varPackagesRemoved[@]} packages removed"
+log "${#varPackagesRemoved[@]} packages were removed"
 [ ${#varPackagesRemoved[@]} -gt 0 ] && echo "Package List:"
 	for package in "${varPackagesRemoved[@]}"; do
 	echo $package
@@ -54,6 +65,7 @@ echo "${#varPackagesRemoved[@]} packages removed"
 	done
 }
 
+log "Looking for newly installed software"
 checkSetup
 varPackagesAdded=($(getAdded))
 varPackagesRemoved=($(getRemoved))
@@ -61,4 +73,4 @@ buildReport > $varReportFile
 cat $varReportFile
 sendReport
 $( getPackageList > $varCurrentList )
-echo "Done"
+log "Check completed"
